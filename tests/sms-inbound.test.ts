@@ -430,6 +430,50 @@ describe('POST /api/telephony/sms-inbound — real mode signature enforcement', 
     }
   });
 
+  it('validates the signature against the PUBLIC origin when SICKBAY_PUBLIC_BASE_URL is set (proxy port quirk)', async () => {
+    // The WHATWG URL host setter keeps an existing port when the assigned
+    // value carries none (http://localhost:3000 + host=public.host →
+    // public.host:3000), which used to make every proxied signature fail.
+    Object.assign(process.env, REAL_TWILIO_ENV);
+    const savedPublicBase = process.env.SICKBAY_PUBLIC_BASE_URL;
+    process.env.SICKBAY_PUBLIC_BASE_URL = 'https://sickbay.example';
+    const { earlyScheduleId } = seedPatient();
+    const calls: string[] = [];
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return Promise.resolve(
+        new Response(JSON.stringify({ sid: 'SMinbound-proxy-1' }), { status: 201 }),
+      );
+    }) as typeof fetch;
+
+    try {
+      // Request hits the internal dev-server URL; Twilio signed the public one.
+      const fields = { From: PATIENT_PHONE, To: '+15550001111', Body: '1' };
+      const publicUrl = 'https://sickbay.example/api/telephony/sms-inbound';
+      const signature = expectedSignature(publicUrl, fields);
+      const proxiedRequest = new NextRequest('http://localhost:3000/api/telephony/sms-inbound', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-Twilio-Signature': signature,
+        },
+        body: new URLSearchParams(fields).toString(),
+      });
+      const response = await POST(proxiedRequest);
+
+      expect(response.status).toBe(200); // NOT 403 — the internal port must not leak into the signed URL
+      const dose = db
+        .prepare('SELECT adherence_status FROM daily_schedules WHERE id = ?')
+        .get(earlyScheduleId) as { adherence_status: string };
+      expect(dose.adherence_status).toBe('CONFIRMED');
+      expect(calls.every((url) => url.includes('api.twilio.com'))).toBe(true);
+    } finally {
+      if (savedPublicBase === undefined) delete process.env.SICKBAY_PUBLIC_BASE_URL;
+      else process.env.SICKBAY_PUBLIC_BASE_URL = savedPublicBase;
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('accepts an unsigned request in fixture mode (CI and offline demo)', async () => {
     // No TWILIO_* env: no auth token exists to verify against.
     const { earlyScheduleId } = seedPatient();
