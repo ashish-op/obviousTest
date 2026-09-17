@@ -20,6 +20,7 @@ export default function Home() {
         <DemoControls />
         <nav className="lcars-page__nav" aria-label="Demo surfaces">
           <a href="/outbox">SMS Outbox Console →</a>
+          <a href="/side-effects">Side-Effect Monitor →</a>
         </nav>
         <div className="lcars-grid">
           <LcarsPanel label="Morning doses" tone="panel">
