@@ -40,3 +40,19 @@ body {
   gap: 1rem;
   margin-top: 0.5rem;
 }
+
+.lcars-page__nav {
+  margin: 0.75rem 0;
+}
+
+.lcars-page__nav a {
+  color: var(--lcars-ice-blue);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.lcars-page__nav a:hover {
+  color: var(--lcars-warp-gold);
+}

@@ -7,6 +7,7 @@ import {
 } from './fixture';
 import { createConcentrateAiVisionAdapter } from './concentrateai';
 import { createTwilioSmsAdapter } from './twilio';
+import { createOutboxRecordingSmsAdapter } from './outbox-recorder';
 import type { Adapters, Env } from './types';
 
 export * from './types';
@@ -18,10 +19,18 @@ export interface AdapterDeps {
   fetchImpl?: typeof fetch;
 }
 
+/**
+ * Real-mode gate for the SMS integration: all three Twilio credentials present.
+ * The inbound webhook's signature check shares this gate so authorization and
+ * adapter selection can never disagree about what "real mode" is.
+ */
+export function hasTwilioCredentials(env: Env): boolean {
+  return Boolean(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_FROM_NUMBER);
+}
+
 function isRealTwilio(env: Env): [string, string, string] | null {
-  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER } = env;
-  if (!(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_FROM_NUMBER)) return null;
-  return [TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER];
+  if (!hasTwilioCredentials(env)) return null;
+  return [env.TWILIO_ACCOUNT_SID as string, env.TWILIO_AUTH_TOKEN as string, env.TWILIO_FROM_NUMBER as string];
 }
 
 function concentrateAiApiKey(env: Env): string | null {
@@ -39,12 +48,21 @@ function concentrateAiApiKey(env: Env): string | null {
 export function getAdapters(env: Env, deps: AdapterDeps): Adapters {
   const twilio = isRealTwilio(env);
   const smsGateway = twilio
-    ? createTwilioSmsAdapter({
-        accountSid: twilio[0],
-        authToken: twilio[1],
-        fromNumber: twilio[2],
-        fetchImpl: deps.fetchImpl,
-      })
+    ? // Real mode still records every send to sms_outbox (provider sid kept) —
+      // the console renders what hit a phone in both modes.
+      createOutboxRecordingSmsAdapter(
+        createTwilioSmsAdapter({
+          accountSid: twilio[0],
+          authToken: twilio[1],
+          fromNumber: twilio[2],
+          fetchImpl: deps.fetchImpl,
+        }),
+        {
+          db: deps.db,
+          // Lazy so real mode never demands PHONE_ENCRYPTION_KEY.
+          encryptionKey: () => loadEncryptionKey(env),
+        },
+      )
     : createFixtureSmsAdapter({
         db: deps.db,
         // Lazy so real mode never demands PHONE_ENCRYPTION_KEY.
