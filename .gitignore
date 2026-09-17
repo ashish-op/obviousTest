@@ -1,0 +1,29 @@
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# local sqlite data
+/data/
+
+# testing
+/coverage
+
+# env files — never commit keys (PHONE_ENCRYPTION_KEY, Twilio, ConcentrateAI)
+.env
+.env.*
+!.env.example
+
+# misc
+.DS_Store
+*.pem
+*.tsbuildinfo
+next-env.d.ts
+
+# obvious
+.obvious/
