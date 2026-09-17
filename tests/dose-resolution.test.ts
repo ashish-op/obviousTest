@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveEarliestPendingDose } from '@/lib/engines/dose-resolution';
+import { parseInboundCommand, resolveEarliestPendingDose } from '@/lib/engines/dose-resolution';
 import type { DoseEvent } from '@/lib/engines/types';
 
 function dose(id: string, scheduledFor: string, adherenceStatus: DoseEvent['adherenceStatus'] = 'PENDING'): DoseEvent {
@@ -74,5 +74,41 @@ describe('resolveEarliestPendingDose — earliest-pending resolution for concurr
     const reversed = resolveEarliestPendingDose([...doses].reverse());
     expect(forward).toEqual(reversed);
     expect(forward!.id).toBe('a-dose');
+  });
+});
+
+describe('parseInboundCommand — PRD §5 SMS protocol parsing', () => {
+  it('parses every confirmation keyword, case-insensitively', () => {
+    expect(parseInboundCommand('1')).toEqual({ kind: 'confirm' });
+    expect(parseInboundCommand('yes')).toEqual({ kind: 'confirm' });
+    expect(parseInboundCommand('  CONFIRMED ')).toEqual({ kind: 'confirm' });
+  });
+
+  it('parses skip/denial keywords', () => {
+    expect(parseInboundCommand('NO')).toEqual({ kind: 'skip' });
+    expect(parseInboundCommand('skip')).toEqual({ kind: 'skip' });
+  });
+
+  it('parses the DIZZY YES / DIZZY NO symptom protocol into a symptom report', () => {
+    expect(parseInboundCommand('DIZZY YES')).toEqual({ kind: 'symptom_report', canonicalSymptom: 'dizziness', affirmed: true });
+    expect(parseInboundCommand('dizzy no')).toEqual({ kind: 'symptom_report', canonicalSymptom: 'dizziness', affirmed: false });
+  });
+
+  it('never guesses an unrecognized symptom — DIZZY YES is protocol, RASH YES is not', () => {
+    expect(parseInboundCommand('RASH YES')).toEqual({ kind: 'unknown' });
+  });
+
+  it('classifies arbitrary text as unknown rather than a command', () => {
+    expect(parseInboundCommand('what about my evening dose?')).toEqual({ kind: 'unknown' });
+    expect(parseInboundCommand('')).toEqual({ kind: 'unknown' });
+  });
+
+  it('does not parse a bare symptom word as a report — the protocol requires an answer', () => {
+    expect(parseInboundCommand('DIZZY')).toEqual({ kind: 'unknown' });
+  });
+
+  it('rejects three-word and malformed multi-word bodies', () => {
+    expect(parseInboundCommand('DIZZY YES TODAY')).toEqual({ kind: 'unknown' });
+    expect(parseInboundCommand('YES NO')).toEqual({ kind: 'unknown' });
   });
 });
