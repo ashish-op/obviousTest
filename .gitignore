@@ -27,3 +27,6 @@ next-env.d.ts
 
 # obvious
 .obvious/
+
+# Live smoke fixture photos (downloaded for the real-extraction pass; see README)
+scripts/fixtures/real-bottle/

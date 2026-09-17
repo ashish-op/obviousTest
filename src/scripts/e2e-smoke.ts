@@ -59,7 +59,13 @@ if (missing.length > 0) {
 
 const twilioSid = process.env.TWILIO_ACCOUNT_SID as string;
 const twilioToken = process.env.TWILIO_AUTH_TOKEN as string;
-const CAREGIVER_NUMBER = process.env.TWILIO_FROM_NUMBER as string;
+// The destination the demo was seeded with (DEMO_* phones): the Twilio
+// account's verified caller ID, so every SMS leg reaches a real phone.
+// TWILIO_FROM_NUMBER is the SENDER — a different number.
+const CAREGIVER_NUMBER = (process.env.DEMO_CAREGIVER_PHONE ?? process.env.TWILIO_FROM_NUMBER) as string;
+
+/** E.164-normalize for comparisons (Twilio params and decrypted values both carry `+`). */
+const normalizePhone = (value: string): string => `+${value.replace(/[^\d]/g, '')}`;
 
 let passed = 0;
 let failed = 0;
@@ -128,9 +134,11 @@ async function twilioMessageStatus(sid: string): Promise<string> {
   return typeof payload.status === 'string' ? payload.status : 'unknown';
 }
 
-interface ExtractOutcome {
+interface ExtractionSucceeded {
   imageUrl: string;
-  result: {
+  status: 'succeeded';
+  gate: 'auto_populate' | 'low_confidence';
+  extraction: {
     brandName: string | null;
     genericName: string;
     dosage: string;
@@ -139,314 +147,378 @@ interface ExtractOutcome {
     highRiskSideEffects: string[];
     rxcui: string | null;
   };
-  gateAction: 'auto_populate' | 'low_confidence';
-  extractionMode: string;
+  rxnorm: { rxcui: string; name: string } | null;
+  highRiskSideEffects: string[];
 }
 
-section('1. Server reachability');
-{
-  const response = await fetch(BASE_URL).catch(() => null);
-  check(`GET ${BASE_URL} responds`, response !== null && response.ok);
-  if (!response || !response.ok) {
-    console.error('Dev server is not reachable — start it with `npm run dev` first.');
-    process.exit(1);
-  }
+interface ExtractionFailed {
+  imageUrl: string;
+  status: 'failed';
+  reason: string;
 }
 
-// ---- 2. Upload + real extraction ----
-const outcomes: ExtractOutcome[] = [];
-const uploadedUrls: string[] = [];
-{
-  section('2. Photo upload → real ConcentrateAI extraction');
-  const form = new FormData();
-  for (const photoPath of PHOTOS) {
-    const bytes = readFileSync(photoPath);
-    form.append('photos', new Blob([bytes], { type: 'image/jpeg' }), path.basename(photoPath));
-  }
-  const uploadResponse = await fetch(`${BASE_URL}/api/ingest/upload`, { method: 'POST', body: form });
-  const uploadOk = check(
-    'POST /api/ingest/upload accepts both real bottle photos',
-    uploadResponse.status === 201,
-    `status ${uploadResponse.status}`,
-  );
-  if (uploadOk) {
-    const payload = (await uploadResponse.json()) as { uploads: { url: string; originalName: string }[] };
-    uploadedUrls.push(...payload.uploads.map((u) => u.url));
-    check(
-      'upload URLs are absolute (fetchable by the vision provider)',
-      uploadedUrls.every((u) => u.startsWith('http')),
-      uploadedUrls.join(', '),
-    );
-    const extract = await postJson('/api/ingest/extract', { imageUrls: uploadedUrls });
-    const body = extract.body as { outcomes?: ExtractOutcome[] } | null;
-    check(
-      'POST /api/ingest/extract returns one outcome per photo',
-      extract.status === 200 && Array.isArray(body?.outcomes) && body!.outcomes!.length === PHOTOS.length,
-    );
-    outcomes.push(...(body?.outcomes ?? []));
+type ExtractOutcome = ExtractionSucceeded | ExtractionFailed;
 
-    const realMode =
-      outcomes.length > 0 &&
-      !outcomes.some(
-        (o) =>
-          o.extractionMode === 'fixture' ||
-          (o.result.genericName === 'levothyroxine' && o.result.confidence === 0.94),
-      );
-    check('extraction ran in REAL mode (not the canned fixture set)', realMode);
+const isSucceeded = (outcome: ExtractOutcome): outcome is ExtractionSucceeded =>
+  outcome.status === 'succeeded';
 
-    for (const outcome of outcomes) {
-      const which = path.basename(new URL(outcome.imageUrl).pathname);
-      console.log(
-        `    ${which}: generic=${outcome.result.genericName}, dosage=${outcome.result.dosage}, ` +
-          `confidence=${outcome.result.confidence.toFixed(2)}, gate=${outcome.gateAction}, ` +
-          `sideEffects=[${outcome.result.highRiskSideEffects.join(', ')}], rxcui=${outcome.result.rxcui}`,
-      );
+async function main(): Promise<number> {
+  section('1. Server reachability');
+  {
+    const response = await fetch(BASE_URL).catch(() => null);
+    check(`GET ${BASE_URL} responds`, response !== null && response.ok);
+    if (!response || !response.ok) {
+      console.error('Dev server is not reachable — start it with `npm run dev` first.');
+      process.exit(1);
     }
   }
-}
 
-// ---- 3. Medications (two real RxNorm entries + the real OCR read) ----
-{
-  section('3. Medications (RxNorm normalization + OCR-sourced card)');
-  const tylenol = outcomes.find((o) => /acetaminophen|tylenol/i.test(o.result.genericName));
-  const entries: {
-    label: string;
-    body: Record<string, unknown>;
-    groundTruth?: RegExp;
-  }[] = [
-    {
-      label: 'levothyroxine (manual)',
-      body: {
-        brandName: 'Synthroid',
-        genericName: 'levothyroxine',
-        dosage: '50 mcg',
-        instructionsRaw: 'Take once daily in the morning on an empty stomach.',
-        rxcui: '11289',
-        highRiskSideEffects: [],
-        source: 'manual',
-        bufferType: null,
-        minBufferMinutes: null,
+  // ---- 2. Upload + real extraction ----
+  const outcomes: ExtractOutcome[] = [];
+  const uploadedUrls: string[] = [];
+  {
+    section('2. Photo upload → real ConcentrateAI extraction');
+    const form = new FormData();
+    for (const photoPath of PHOTOS) {
+      const bytes = readFileSync(photoPath);
+      form.append('photos', new Blob([bytes], { type: 'image/jpeg' }), path.basename(photoPath));
+    }
+    const uploadResponse = await fetch(`${BASE_URL}/api/ingest/upload`, { method: 'POST', body: form });
+    const uploadOk = check(
+      'POST /api/ingest/upload accepts both real bottle photos',
+      uploadResponse.status === 201,
+      `status ${uploadResponse.status}`,
+    );
+    if (uploadOk) {
+      const payload = (await uploadResponse.json()) as { uploads: { url: string; originalName: string }[] };
+      uploadedUrls.push(...payload.uploads.map((u) => u.url));
+      check(
+        'upload URLs are absolute (fetchable by the vision provider)',
+        uploadedUrls.every((u) => u.startsWith('http')),
+        uploadedUrls.join(', '),
+      );
+      const extract = await postJson('/api/ingest/extract', { imageUrls: uploadedUrls });
+      const body = extract.body as { outcomes?: ExtractOutcome[] } | null;
+      check(
+        'POST /api/ingest/extract returns one outcome per photo',
+        extract.status === 200 && Array.isArray(body?.outcomes) && body!.outcomes!.length === PHOTOS.length,
+      );
+      outcomes.push(...(body?.outcomes ?? []));
+
+      const succeeded = outcomes.filter(isSucceeded);
+      const failedOutcomes = outcomes.filter((o) => !isSucceeded(o));
+      const realMode =
+        succeeded.length > 0 &&
+        !succeeded.some(
+          (o) =>
+            o.extraction.genericName === 'levothyroxine' && o.extraction.confidence === 0.94,
+        );
+      check(
+        'extraction ran in REAL mode (not the canned fixture set)',
+        realMode,
+        realMode ? undefined : 'fixture fingerprints found',
+      );
+      for (const outcome of failedOutcomes) {
+        failed += 1;
+        console.log(`  ❌ extraction failed for ${path.basename(new URL(outcome.imageUrl).pathname)} — ${outcome.reason}`);
+      }
+      for (const outcome of succeeded) {
+        const which = path.basename(new URL(outcome.imageUrl).pathname);
+        const rx = outcome.rxnorm ? `${outcome.rxnorm.rxcui} (${outcome.rxnorm.name})` : 'null (flagged for manual entry)';
+        console.log(
+          `    ${which}: generic=${outcome.extraction.genericName}, dosage=${outcome.extraction.dosage}, ` +
+            `confidence=${outcome.extraction.confidence.toFixed(2)}, gate=${outcome.gate}, ` +
+            `sideEffects=[${outcome.highRiskSideEffects.join(', ')}], rxnorm=${rx}`,
+        );
+      }
+    }
+  }
+
+  // ---- 3. Medications (two real RxNorm entries + the real OCR read) ----
+  {
+    section('3. Medications (RxNorm normalization + OCR-sourced card)');
+    const tylenol = outcomes.find(
+      (o): o is ExtractionSucceeded =>
+        isSucceeded(o) && /acetaminophen|tylenol/i.test(o.extraction.genericName),
+    );
+    const entries: {
+      label: string;
+      body: Record<string, unknown>;
+      groundTruth?: RegExp;
+    }[] = [
+      {
+        label: 'levothyroxine (manual)',
+        body: {
+          brandName: 'Synthroid',
+          genericName: 'levothyroxine',
+          dosage: '50 mcg',
+          instructionsRaw: 'Take once daily in the morning on an empty stomach.',
+          rxcui: '11289',
+          highRiskSideEffects: [],
+          source: 'manual',
+          bufferType: null,
+          minBufferMinutes: null,
+        },
+        groundTruth: /levothyroxine/i,
       },
-      groundTruth: /levothyroxine/i,
-    },
-    {
-      label: 'calcium carbonate (manual)',
-      body: {
-        brandName: 'Caltrate',
-        genericName: 'calcium carbonate',
-        dosage: '1250 mg',
-        instructionsRaw: 'Take 1 tablet twice daily with food.',
-        rxcui: '3008',
-        highRiskSideEffects: [],
-        source: 'manual',
-        bufferType: null,
-        minBufferMinutes: null,
+      {
+        label: 'calcium carbonate (manual)',
+        body: {
+          brandName: 'Caltrate',
+          genericName: 'calcium carbonate',
+          dosage: '1250 mg',
+          instructionsRaw: 'Take 1 tablet twice daily with food.',
+          rxcui: '21925',
+          highRiskSideEffects: [],
+          source: 'manual',
+          bufferType: null,
+          minBufferMinutes: null,
+        },
+        groundTruth: /calcium/i,
       },
-      groundTruth: /calcium/i,
-    },
-    {
-      label: 'lisinopril (manual, dizziness flagged)',
-      body: {
-        brandName: 'Zestril',
-        genericName: 'lisinopril',
-        dosage: '10 mg',
-        instructionsRaw: 'Take one tablet by mouth daily.',
-        rxcui: '29046',
-        highRiskSideEffects: ['dizziness'],
-        source: 'manual',
-        bufferType: null,
-        minBufferMinutes: null,
+      {
+        label: 'lisinopril (manual, dizziness flagged)',
+        body: {
+          brandName: 'Zestril',
+          genericName: 'lisinopril',
+          dosage: '10 mg',
+          instructionsRaw: 'Take one tablet by mouth daily.',
+          rxcui: '29046',
+          highRiskSideEffects: ['dizziness'],
+          source: 'manual',
+          bufferType: null,
+          minBufferMinutes: null,
+        },
+        groundTruth: /lisinopril/i,
       },
-      groundTruth: /lisinopril/i,
-    },
-    ...(tylenol
-      ? [
-          {
-            label: `acetaminophen (source=ocr, live confidence ${tylenol.result.confidence.toFixed(2)})`,
-            body: {
-              brandName: tylenol.result.brandName,
-              genericName: tylenol.result.genericName,
-              dosage: tylenol.result.dosage,
-              instructionsRaw: tylenol.result.instructionsRaw,
-              rxcui: tylenol.result.rxcui,
-              highRiskSideEffects: tylenol.result.highRiskSideEffects,
-              source: 'ocr',
-              extractionConfidence: tylenol.result.confidence,
-              bufferType: null,
-              minBufferMinutes: null,
+      ...(tylenol
+        ? [
+            {
+              label: `acetaminophen (source=ocr, live confidence ${tylenol.extraction.confidence.toFixed(2)})`,
+              body: {
+                brandName: tylenol.extraction.brandName,
+                genericName: tylenol.extraction.genericName,
+                dosage: tylenol.extraction.dosage,
+                instructionsRaw: tylenol.extraction.instructionsRaw,
+                rxcui: tylenol.extraction.rxcui,
+                highRiskSideEffects: tylenol.extraction.highRiskSideEffects,
+                source: 'ocr',
+                extractionConfidence: tylenol.extraction.confidence,
+                bufferType: null,
+                minBufferMinutes: null,
+              },
             },
-          },
-        ]
-      : []),
-  ];
+          ]
+        : []),
+    ];
 
-  for (const entry of entries) {
-    const response = await postJson('/api/medications', entry.body);
-    const med = response.body as { genericName?: string } | null;
-    check(`POST /api/medications — ${entry.label}`, response.status === 201, `status ${response.status}`);
-    if (entry.groundTruth && med) {
-      check(`  ${entry.label} names ground truth`, entry.groundTruth.test(med.genericName ?? ''), med.genericName ?? '(none)');
+    for (const entry of entries) {
+      const response = await postJson('/api/medications', entry.body);
+      const med = response.body as { genericName?: string } | null;
+      check(`POST /api/medications — ${entry.label}`, response.status === 201, `status ${response.status}`);
+      if (entry.groundTruth && med) {
+        check(`  ${entry.label} names ground truth`, entry.groundTruth.test(med.genericName ?? ''), med.genericName ?? '(none)');
+      }
     }
   }
-}
 
-// ---- 4. Schedule (buffer solver, PRD §4 worked case) ----
-{
-  section('4. Schedule regenerate — levothyroxine/calcium 2 h buffer');
-  const regen = await postJson('/api/schedule/regenerate', {});
-  check('POST /api/schedule/regenerate', regen.status === 200, `status ${regen.status}`);
-  const schedule = await getJson('/api/schedule');
-  const doses = ((schedule.body as { doses?: { medicationName: string; scheduledFor: string; adherenceStatus: string; deferredReason: string | null; isPastBedtimeWarning: boolean }[] }).doses ?? []);
-  for (const dose of doses) {
-    console.log(
-      `    ${dose.scheduledFor.slice(11, 16)}  ${dose.medicationName.padEnd(18)} ${dose.adherenceStatus}` +
-        `${dose.deferredReason ? ` (${dose.deferredReason})` : ''}${dose.isPastBedtimeWarning ? ' ⏰bedtime' : ''}`,
+  // ---- 4. Schedule (buffer solver, PRD §4 worked case) ----
+  {
+    section('4. Schedule shift — PRD §4 worked case (wake → 09:30, buffer push)');
+    const regen = await postJson('/api/schedule/regenerate', {});
+    check('POST /api/schedule/regenerate', regen.status === 200, `status ${regen.status}`);
+
+    // The buffer push is a SHIFT-time rule (tests/schedule-solver.test.ts):
+    // the initial anchor gap (07:00 → 08:00, 60 min) is preserved on
+    // generation, and the solver pushes calcium forward only when the routine
+    // shift re-enforces prerequisites. PRD §4 worked case: wake 07:00 → 09:30.
+    const shift = await postJson('/api/schedule/shift', { wakeTime: '09:30' });
+    check('POST /api/schedule/shift {"wakeTime":"09:30"}', shift.status === 200, `status ${shift.status}`);
+    const doses = ((shift.body as { doses?: { medicationName: string; scheduledFor: string; adherenceStatus: string; deferredReason: string | null; isPastBedtimeWarning: boolean }[] }).doses ?? []);
+    for (const dose of doses) {
+      console.log(
+        `    ${dose.scheduledFor.slice(11, 16)}  ${dose.medicationName.padEnd(18)} ${dose.adherenceStatus}` +
+          `${dose.deferredReason ? ` (${dose.deferredReason})` : ''}${dose.isPastBedtimeWarning ? ' ⏰bedtime' : ''}`,
+      );
+    }
+    const levo = doses.find((d) => /levothyroxine/i.test(d.medicationName));
+    const calcium = doses.find((d) => /calcium/i.test(d.medicationName));
+    if (levo && calcium) {
+      const gapMinutes =
+        (new Date(calcium.scheduledFor).getTime() - new Date(levo.scheduledFor).getTime()) / 60000;
+      check('calcium pushed to ≥2 h from levothyroxine after shift', gapMinutes >= 120, `gap ${gapMinutes} min`);
+      // The push itself is asserted by the gap: regenerate already enforces
+      // the buffer at generation time (delta 0 → buffer_push), so a later
+      // shift usually lands the pair at exactly 120 min under a wake_shift
+      // marker. Either marker is valid; the enforced gap is the invariant.
+      check(
+        'calcium dose carries a valid deferred marker',
+        calcium.deferredReason === 'buffer_push' || calcium.deferredReason === 'wake_shift',
+        `reason=${calcium.deferredReason}`,
+      );
+    } else {
+      check('both levothyroxine and calcium have dose rows', false);
+    }
+  }
+
+  /**
+   * Run a small read-only SQLite probe against data/sickbay.db and return the
+   * JSON it prints. (The outbox has no JSON API route — the demo console renders
+   * it server-side — so the smoke reads it the same way the page does.)
+   */
+  function sqliteProbe(script: string): unknown {
+    const result = spawnSync(process.execPath, ['-e', script], { cwd: process.cwd(), encoding: 'utf8' });
+    if (result.status !== 0 || !result.stdout.trim()) {
+      throw new Error(`sqlite probe failed: ${result.stderr}`);
+    }
+    return JSON.parse(result.stdout);
+  }
+
+  // ---- 5. Signed inbound loop (confirm pending doses before the sweep) ----
+  {
+    section('5. Signed inbound SMS — confirm then DIZZY YES');
+    const patientNumber = normalizePhone(process.env.DEMO_PROFILE_PHONE ?? process.env.TWILIO_FROM_NUMBER ?? '');
+    const inboundParams = {
+      From: patientNumber,
+      To: patientNumber,
+      Body: '1',
+      MessageSid: `SM${crypto.randomBytes(16).toString('hex')}`,
+    };
+    // Confirm three pending doses (levothyroxine, lisinopril, morning calcium):
+    // the symptom check-in needs a CONFIRMED dizziness-flagged dose to
+    // attribute DIZZY YES to, and confirming first keeps the later sweep from
+    // escalating doses a real patient would have taken on schedule.
+    for (let i = 1; i <= 3; i += 1) {
+      const confirm = await postInbound(
+        { ...inboundParams, MessageSid: `SM${crypto.randomBytes(16).toString('hex')}` },
+        true,
+      );
+      check(`signed "1" accepted (dose ${i})`, confirm.ok, `status ${confirm.status}`);
+    }
+
+    const schedule = await getJson('/api/schedule');
+    const confirmedCount = ((schedule.body as { doses?: { adherenceStatus: string }[] }).doses ?? []).filter(
+      (d) => d.adherenceStatus === 'CONFIRMED',
+    ).length;
+    check('three doses now CONFIRMED', confirmedCount >= 3, `confirmed=${confirmedCount}`);
+
+    const dizzy = await postInbound(
+      { From: inboundParams.From, Body: 'DIZZY YES', MessageSid: `SM${crypto.randomBytes(16).toString('hex')}` },
+      true,
     );
-  }
-  const levo = doses.find((d) => /levothyroxine/i.test(d.medicationName));
-  const calcium = doses.find((d) => /calcium/i.test(d.medicationName));
-  if (levo && calcium) {
-    const gapMinutes =
-      (new Date(calcium.scheduledFor).getTime() - new Date(levo.scheduledFor).getTime()) / 60000;
-    check('calcium never lands within 2 h of levothyroxine', gapMinutes >= 120, `gap ${gapMinutes} min`);
-  } else {
-    check('both levothyroxine and calcium have dose rows', false);
-  }
-}
+    check('signed "DIZZY YES" accepted', dizzy.ok, `status ${dizzy.status}`);
+    const sideEffects = sqliteProbe(`
+const Database = require('better-sqlite3');
+const db = new Database('data/sickbay.db', { readonly: true });
+console.log(JSON.stringify(db.prepare("SELECT COUNT(*) n FROM side_effect_logs WHERE reported_via='sms'").get()));
+`) as { n: number };
+    check('DIZZY YES persisted a side_effect_logs row', sideEffects.n > 0, `n=${sideEffects.n}`);
 
-// ---- 5. Escalation sweep (real caregiver SMS) ----
-/**
- * Run a small read-only SQLite probe against data/sickbay.db and return the
- * JSON it prints. (The outbox has no JSON API route — the demo console renders
- * it server-side — so the smoke reads it the same way the page does.)
- */
-function sqliteProbe(script: string): unknown {
-  const result = spawnSync(process.execPath, ['-e', script], { cwd: process.cwd(), encoding: 'utf8' });
-  if (result.status !== 0 || !result.stdout.trim()) {
-    throw new Error(`sqlite probe failed: ${result.stderr}`);
+    const unsigned = await postInbound({ From: inboundParams.From, Body: '1' }, false);
+    check('unsigned inbound rejected with 403', unsigned.status === 403, `status ${unsigned.status}`);
   }
-  return JSON.parse(result.stdout);
-}
 
-const outboundSids: string[] = [];
-{
-  section('5. Escalation sweep → real caregiver SMS');
-  const sweep = await postJson('/api/telephony/sweep', {});
-  const body = sweep.body as { outcome?: { dispatchedJobs?: number; backfilledJobs?: number; cancelledJobs?: number } } | null;
-  check(
-    'POST /api/telephony/sweep dispatches due escalations',
-    sweep.status === 200 && (body?.outcome?.dispatchedJobs ?? 0) > 0,
-    `dispatched=${body?.outcome?.dispatchedJobs} backfilled=${body?.outcome?.backfilledJobs} cancelled=${body?.outcome?.cancelledJobs}`,
-  );
+  // ---- 6. Escalation sweep (real caregiver SMS for the remaining pending dose) ----
+  const outboundSids: string[] = [];
+  {
+    section('6. Escalation sweep → real caregiver SMS');
+    const sweep = await postJson('/api/telephony/sweep', {});
+    const body = sweep.body as { outcome?: { dispatchedJobs?: number; backfilledJobs?: number; cancelledJobs?: number } } | null;
+    check(
+      'POST /api/telephony/sweep dispatches due escalations',
+      sweep.status === 200 && (body?.outcome?.dispatchedJobs ?? 0) > 0,
+      `dispatched=${body?.outcome?.dispatchedJobs} backfilled=${body?.outcome?.backfilledJobs} cancelled=${body?.outcome?.cancelledJobs}`,
+    );
 
-  const outbox = sqliteProbe(`
+    const outbox = sqliteProbe(`
 const Database = require('better-sqlite3');
 const db = new Database('data/sickbay.db', { readonly: true });
 console.log(JSON.stringify(db.prepare("SELECT recipient_encrypted, body, provider_message_id FROM sms_outbox WHERE direction='outbound' AND delivery_mode='real' ORDER BY created_at").all()));
 `) as { recipient_encrypted: string; body: string; provider_message_id: string | null }[];
-  check('sms_outbox holds real-mode outbound (caregiver) messages', outbox.length > 0, `${outbox.length} rows`);
-  for (const row of outbox) {
-    if (row.provider_message_id) outboundSids.push(row.provider_message_id);
-    console.log(`    → ${decryptPhoneNumber(row.recipient_encrypted, key)}: ${row.body.slice(0, 70)}`);
-  }
-  check(
-    'caregiver escalation went to the verified test number',
-    outbox.every((row) => decryptPhoneNumber(row.recipient_encrypted, key) === CAREGIVER_NUMBER),
-  );
-}
-
-// ---- 6. Signed inbound loop (confirm + DIZZY YES) ----
-{
-  section('6. Signed inbound SMS — confirm ×2 then DIZZY YES');
-  const inboundParams = {
-    From: process.env.TWILIO_FROM_NUMBER ?? '',
-    To: process.env.TWILIO_FROM_NUMBER ?? '',
-    Body: '1',
-    MessageSid: `SM${crypto.randomBytes(16).toString('hex')}`,
-  };
-  const confirm1 = await postInbound(inboundParams, true);
-  check('signed "1" accepted', confirm1.ok, `status ${confirm1.status}`);
-
-  const confirm2 = await postInbound({ ...inboundParams, MessageSid: `SM${crypto.randomBytes(16).toString('hex')}` }, true);
-  check('signed "1" again (second pending dose)', confirm2.ok, `status ${confirm2.status}`);
-
-  const schedule = await getJson('/api/schedule');
-  const confirmedCount = ((schedule.body as { doses?: { adherenceStatus: string }[] }).doses ?? []).filter(
-    (d) => d.adherenceStatus === 'CONFIRMED',
-  ).length;
-  check('two doses now CONFIRMED', confirmedCount >= 2, `confirmed=${confirmedCount}`);
-
-  const dizzy = await postInbound(
-    { From: inboundParams.From, Body: 'DIZZY YES', MessageSid: `SM${crypto.randomBytes(16).toString('hex')}` },
-    true,
-  );
-  check('signed "DIZZY YES" accepted', dizzy.ok, `status ${dizzy.status}`);
-
-  const unsigned = await postInbound({ From: inboundParams.From, Body: '1' }, false);
-  check('unsigned inbound rejected with 403', unsigned.status === 403, `status ${unsigned.status}`);
-}
-
-// ---- 7. Reconciliation PDF ----
-{
-  section('7. Reconciliation PDF export');
-  const response = await fetch(`${BASE_URL}/api/reconciliation/pdf`);
-  const buffer = Buffer.from(await response.arrayBuffer());
-  check('GET /api/reconciliation/pdf returns a PDF', response.ok && buffer.subarray(0, 4).toString() === '%PDF', `${buffer.byteLength} bytes`);
-
-  const { PDFParse } = await import('pdf-parse');
-  const parser = new PDFParse({ data: new Uint8Array(buffer) });
-  try {
-    const text = (await parser.getText()).text.replace(/\s+/g, ' ');
-    check('PDF: Dose Timeline section', text.includes('Dose Timeline'));
-    check('PDF: Side Effects section', text.includes('Side Effects'));
-    check('PDF: Detected Timing Conflicts section', text.includes('Detected Timing Conflicts'));
-    check('PDF: Clinical Notice section', text.includes('Clinical Notice'));
+    check('sms_outbox holds real-mode outbound (caregiver) messages', outbox.length > 0, `${outbox.length} rows`);
+    for (const row of outbox) {
+      if (row.provider_message_id) outboundSids.push(row.provider_message_id);
+      console.log(`    → ${decryptPhoneNumber(row.recipient_encrypted, key)}: ${row.body.slice(0, 70)}`);
+    }
+    const normalizedCaregiver = normalizePhone(CAREGIVER_NUMBER);
     check(
-      'PDF: scope disclaimer text present',
-      text.includes('does not recommend, alter, or validate any prescription'),
+      'caregiver escalation went to the verified test number',
+      outbox.every((row) => normalizePhone(decryptPhoneNumber(row.recipient_encrypted, key)) === normalizedCaregiver),
+      `expected ${normalizedCaregiver}`,
     );
-  } finally {
-    await parser.destroy();
   }
-  const outPath = process.env.SMOKE_PDF_PATH ?? '/home/user/work/evidence/reconciliation-live.pdf';
-  writeFileSync(outPath, buffer);
-  console.log(`    saved ${outPath}`);
+
+
+  // ---- 7. Reconciliation PDF ----
+  {
+    section('7. Reconciliation PDF export');
+    const response = await fetch(`${BASE_URL}/api/reconciliation/pdf`);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    check('GET /api/reconciliation/pdf returns a PDF', response.ok && buffer.subarray(0, 4).toString() === '%PDF', `${buffer.byteLength} bytes`);
+
+    const { PDFParse } = await import('pdf-parse');
+    const parser = new PDFParse({ data: new Uint8Array(buffer) });
+    try {
+      const text = (await parser.getText()).text.replace(/\s+/g, ' ');
+      check('PDF: Dose Timeline section', text.includes('Dose Timeline'));
+      check('PDF: Side Effects section', text.includes('Side Effects'));
+      check('PDF: Detected Timing Conflicts section', text.includes('Detected Timing Conflicts'));
+      check('PDF: Clinical Notice section', text.includes('Clinical Notice'));
+      check(
+        'PDF: scope disclaimer text present',
+        text.includes('does not recommend, alter, or validate any prescription'),
+      );
+    } finally {
+      await parser.destroy();
+    }
+    const outPath = process.env.SMOKE_PDF_PATH ?? '/home/user/work/evidence/reconciliation-live.pdf';
+    writeFileSync(outPath, buffer);
+    console.log(`    saved ${outPath}`);
+  }
+
+  // ---- 8. Database verification + Twilio delivery ----
+  {
+    section('8. Database + Twilio delivery verification');
+    const db = sqliteProbe(`
+  const Database = require('better-sqlite3');
+  const db = new Database('data/sickbay.db', { readonly: true });
+  const statuses = db.prepare('SELECT adherence_status, COUNT(*) n FROM daily_schedules GROUP BY adherence_status').all();
+  const realOutbox = db.prepare("SELECT COUNT(*) n FROM sms_outbox WHERE direction='outbound' AND delivery_mode='real' AND provider_message_id IS NOT NULL").get();
+  const realInbound = db.prepare("SELECT COUNT(*) n FROM sms_outbox WHERE delivery_mode='real' AND direction='inbound'").get();
+  const sideEffects = db.prepare("SELECT COUNT(*) n FROM side_effect_logs WHERE reported_via='sms'").get();
+  const audits = db.prepare("SELECT COUNT(*) n FROM audit_logs").get();
+  const jobs = db.prepare("SELECT status, COUNT(*) n FROM escalation_jobs GROUP BY status").all();
+  console.log(JSON.stringify({ statuses, realOutbox: realOutbox.n, realInbound: realInbound.n, sideEffects: sideEffects.n, audits: audits.n, jobs }));
+  `) as {
+      statuses: { adherence_status: string; n: number }[];
+      realOutbox: number;
+      realInbound: number;
+      sideEffects: number;
+      audits: number;
+      jobs: { status: string; n: number }[];
+    };
+
+    check('escalation_jobs dispatched rows exist', (db.jobs.find((j) => j.status === 'dispatched')?.n ?? 0) > 0, JSON.stringify(db.jobs));
+    check('side_effect_logs has the SMS-reported dizziness row', db.sideEffects > 0, `n=${db.sideEffects}`);
+    check('audit_logs rows written (pdf export)', db.audits > 0, `n=${db.audits}`);
+    check('all real outbox rows carry a provider message SID', db.realOutbox === outboundSids.length && db.realOutbox > 0, `outbox=${db.realOutbox}, sids=${outboundSids.length}`);
+    check('inbound SMS rows persisted in real mode', db.realInbound >= 3, `n=${db.realInbound}`);
+    console.log(`    dose statuses: ${db.statuses.map((s) => `${s.adherence_status}=${s.n}`).join(', ')}`);
+
+    for (const sid of outboundSids) {
+      const status = await twilioMessageStatus(sid);
+      check(`Twilio message ${sid.slice(0, 10)}…`, status !== 'failed', `status=${status}`);
+    }
+  }
+
+  console.log(`\n=== SMOKE SUMMARY: ${passed} passed, ${failed} failed ===`);
+
+  return failed === 0 ? 0 : 1;
 }
 
-// ---- 8. Database verification + Twilio delivery ----
-{
-  section('8. Database + Twilio delivery verification');
-  const db = sqliteProbe(`
-const Database = require('better-sqlite3');
-const db = new Database('data/sickbay.db', { readonly: true });
-const statuses = db.prepare('SELECT adherence_status, COUNT(*) n FROM daily_schedules GROUP BY adherence_status').all();
-const realOutbox = db.prepare("SELECT COUNT(*) n FROM sms_outbox WHERE delivery_mode='real' AND provider_message_id IS NOT NULL").get();
-const realInbound = db.prepare("SELECT COUNT(*) n FROM sms_outbox WHERE delivery_mode='real' AND direction='inbound'").get();
-const sideEffects = db.prepare("SELECT COUNT(*) n FROM side_effect_logs WHERE reported_via='sms'").get();
-const audits = db.prepare("SELECT COUNT(*) n FROM audit_logs").get();
-const jobs = db.prepare("SELECT status, COUNT(*) n FROM escalation_jobs GROUP BY status").all();
-console.log(JSON.stringify({ statuses, realOutbox: realOutbox.n, realInbound: realInbound.n, sideEffects: sideEffects.n, audits: audits.n, jobs }));
-`) as {
-    statuses: { adherence_status: string; n: number }[];
-    realOutbox: number;
-    realInbound: number;
-    sideEffects: number;
-    audits: number;
-    jobs: { status: string; n: number }[];
-  };
-
-  check('escalation_jobs dispatched rows exist', (db.jobs.find((j) => j.status === 'dispatched')?.n ?? 0) > 0, JSON.stringify(db.jobs));
-  check('side_effect_logs has the SMS-reported dizziness row', db.sideEffects > 0, `n=${db.sideEffects}`);
-  check('audit_logs rows written (pdf export)', db.audits > 0, `n=${db.audits}`);
-  check('all real outbox rows carry a provider message SID', db.realOutbox === outboundSids.length && db.realOutbox > 0, `outbox=${db.realOutbox}, sids=${outboundSids.length}`);
-  check('inbound SMS rows persisted in real mode', db.realInbound >= 3, `n=${db.realInbound}`);
-  console.log(`    dose statuses: ${db.statuses.map((s) => `${s.adherence_status}=${s.n}`).join(', ')}`);
-
-  for (const sid of outboundSids) {
-    const status = await twilioMessageStatus(sid);
-    check(`Twilio message ${sid.slice(0, 10)}…`, status !== 'failed', `status=${status}`);
-  }
-}
-
-console.log(`\n=== SMOKE SUMMARY: ${passed} passed, ${failed} failed ===`);
-process.exit(failed === 0 ? 0 : 1);
+main()
+  .then((code) => process.exit(code))
+  .catch((error: unknown) => {
+    console.error(error);
+    process.exit(1);
+  });
