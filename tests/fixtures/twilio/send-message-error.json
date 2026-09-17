@@ -1,0 +1,7 @@
+{
+  "$comment": "Recorded wire-shape fixture of a Twilio REST error body (400, bad 'To' number), hand-authored to Twilio's documented error schema. Contract tests feed it through createTwilioSmsAdapter via an injected fetch — no network.",
+  "code": 21211,
+  "message": "The 'To' number is not a valid phone number.",
+  "status": 400,
+  "more_info": "https://www.twilio.com/docs/errors/21211"
+}

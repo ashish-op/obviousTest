@@ -1,0 +1,56 @@
+/*
+ * LCARS design tokens — Sickbay Polypharmacy Engine (PRD §6 palette).
+ *
+ * Two layers:
+ *  - Palette: the seven PRD §6 Voyager colors, verbatim, identical in every
+ *    theme. The palette IS the brand; it never flips. Pinned by
+ *    tests/lcars-tokens.test.ts — change hexes only together with that test.
+ *  - Semantic: theme-dependent surfaces and ink consumed by the LCARS
+ *    primitives. Dark (Deep Space Black) is the default theme; light is
+ *    opted into with [data-theme='light'] on <html>. No prefers-color-scheme
+ *    auto-switch: the product's home surface is Deep Space Black and visual
+ *    behavior stays deterministic.
+ *
+ * Derived-value exceptions (light theme): ice-blue numerics and lavender
+ * muted ink fail legibility on white surfaces, so the semantic tokens map to
+ * darkened variants of the same hues there. The palette tokens themselves
+ * remain the PRD hexes.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* Palette — PRD §6 Voyager table, verbatim. */
+  --lcars-lavender: #9999cc;
+  --lcars-mauve: #cc99cc;
+  --lcars-warp-gold: #ff9900;
+  --lcars-red-alert: #ff3300;
+  --lcars-deep-space-black: #000000;
+  --lcars-soft-tan: #ffcc99;
+  --lcars-ice-blue: #99ccff;
+
+  /* Semantic — dark theme (default): Deep Space Black surfaces, warm LCARS ink. */
+  --lcars-surface: var(--lcars-deep-space-black);
+  --lcars-surface-raised: #191926;
+  --lcars-ink: var(--lcars-soft-tan);
+  --lcars-ink-muted: var(--lcars-lavender);
+  --lcars-ink-on-accent: var(--lcars-deep-space-black);
+  --lcars-ink-on-alert: #ffffff;
+  --lcars-frame-accent: var(--lcars-lavender);
+  --lcars-panel-accent: var(--lcars-mauve);
+  --lcars-status-pending: var(--lcars-warp-gold);
+  --lcars-status-alert: var(--lcars-red-alert);
+  --lcars-status-confirmed: var(--lcars-lavender);
+  --lcars-status-info: var(--lcars-ice-blue);
+  --lcars-data-value: var(--lcars-ice-blue);
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --lcars-surface: #f5f2f9;
+  --lcars-surface-raised: #ffffff;
+  --lcars-ink: #26262e;
+  --lcars-ink-muted: #555588; /* darkened lavender: #9999CC on white fails legibility */
+  --lcars-data-value: #2b6cb0; /* darkened ice blue: #99CCFF on white fails legibility */
+}

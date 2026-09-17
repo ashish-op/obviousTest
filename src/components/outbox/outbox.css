@@ -1,0 +1,65 @@
+/*
+ * Outbox console — consumes semantic LCARS tokens ONLY (raw palette hexes
+ * live in src/styles/lcars-tokens.css and nowhere else).
+ */
+
+.lcars-outbox__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.lcars-outbox__table th {
+  text-align: left;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  color: var(--lcars-ink-muted);
+  border-bottom: 2px solid var(--lcars-frame-accent);
+  padding: 0.5rem 0.75rem;
+}
+
+.lcars-outbox__table td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--lcars-frame-accent);
+  vertical-align: top;
+}
+
+.lcars-outbox__time,
+.lcars-outbox__number {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--lcars-ink);
+}
+
+.lcars-outbox__body {
+  color: var(--lcars-ink);
+  overflow-wrap: anywhere;
+}
+
+.lcars-outbox__mode {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 8px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--lcars-panel-accent);
+  color: var(--lcars-ink-on-accent);
+}
+
+.lcars-outbox__mode--real {
+  background: var(--lcars-status-alert);
+  color: var(--lcars-ink-on-accent);
+}
+
+.lcars-outbox__empty {
+  color: var(--lcars-ink-muted);
+  font-size: 1rem;
+}
+
+.lcars-outbox__sweep-result {
+  color: var(--lcars-ink-muted);
+}
