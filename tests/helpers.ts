@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import type { Adapters, VisionOcrAdapter } from '@/lib/adapters/types';
 import { openDatabase, type SqliteDb } from '@/lib/db/connection';
 import { runMigrations } from '@/lib/db/migrate';
 import { encryptPhoneNumber } from '@/lib/crypto/phone-crypto';
@@ -80,4 +81,21 @@ export function stubJsonFetch(response: Response): {
     return Promise.resolve(response);
   };
   return { impl, calls };
+}
+
+/**
+ * Full Adapters surface with only the vision slot wired — the other slots
+ * throw if touched, so a test that accidentally reaches SMS or the queue
+ * fails loudly instead of passing quietly.
+ */
+export function adaptersFor(visionOcr: VisionOcrAdapter): Adapters {
+  return {
+    visionOcr,
+    smsGateway: {
+      send: () => Promise.reject(new Error('smsGateway must not be called during extraction')),
+    },
+    delayQueue: {
+      enqueue: () => Promise.reject(new Error('delayQueue must not be called during extraction')),
+    },
+  };
 }
