@@ -232,3 +232,105 @@
   font-size: 0.85rem;
   color: var(--lcars-status-alert);
 }
+
+/* --- Ingestion: batch scanner, medication cards, low-confidence modal --- */
+
+.batch-scanner__hint {
+  font-size: 1.05rem;
+  color: var(--lcars-tan, #ffcc99);
+}
+
+.batch-scanner__controls {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.batch-scanner__error,
+.medication-card__error,
+.low-confidence-modal__error {
+  color: var(--lcars-red-alert, #ff3300);
+  font-weight: 700;
+}
+
+.batch-scanner__results {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 1.25rem;
+}
+
+.medication-card__header {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.medication-card__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.medication-card__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.medication-card__field--wide {
+  grid-column: 1 / -1;
+}
+
+.medication-card__field span {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--lcars-lavender, #9999cc);
+}
+
+.medication-card__field input,
+.medication-card__field textarea {
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid var(--lcars-lavender, #9999cc);
+  color: var(--lcars-ice-blue, #99ccff);
+  font: inherit;
+  font-size: 1.1rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+}
+
+.medication-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.9rem;
+}
+
+.low-confidence-modal {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 8, 0.82);
+  z-index: 40;
+}
+
+.low-confidence-modal__surface {
+  width: min(40rem, calc(100vw - 2rem));
+}
+
+.low-confidence-modal__readout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 0.75rem 0;
+}
+
+.low-confidence-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.9rem;
+}
