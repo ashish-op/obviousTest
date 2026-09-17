@@ -3,7 +3,7 @@
 -- in tests/schema-parity.test.ts). Edit both together.
 
 CREATE TABLE IF NOT EXISTS profiles (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL PRIMARY KEY,
   full_name TEXT NOT NULL,
   phone_encrypted TEXT NOT NULL,
   caregiver_name TEXT,
@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS profiles (
 );
 
 CREATE TABLE IF NOT EXISTS medications (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL PRIMARY KEY,
   profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   brand_name TEXT,
   generic_name TEXT NOT NULL,
@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS medications (
 );
 
 CREATE TABLE IF NOT EXISTS daily_schedules (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL PRIMARY KEY,
   profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   medication_id TEXT NOT NULL REFERENCES medications(id) ON DELETE CASCADE,
   scheduled_for TEXT NOT NULL,
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS daily_schedules (
 );
 
 CREATE TABLE IF NOT EXISTS side_effect_logs (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL PRIMARY KEY,
   profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   medication_id TEXT NOT NULL REFERENCES medications(id) ON DELETE CASCADE,
   daily_schedule_id TEXT REFERENCES daily_schedules(id) ON DELETE SET NULL,
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS side_effect_logs (
 );
 
 CREATE TABLE IF NOT EXISTS audit_logs (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL PRIMARY KEY,
   user_id TEXT,
   action TEXT NOT NULL,
   user_agent TEXT,
@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 );
 
 CREATE TABLE IF NOT EXISTS sms_outbox (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL PRIMARY KEY,
   profile_id TEXT REFERENCES profiles(id) ON DELETE SET NULL,
   direction TEXT NOT NULL CHECK (direction IN ('outbound', 'inbound')),
   recipient_encrypted TEXT,
@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS sms_outbox (
 );
 
 CREATE TABLE IF NOT EXISTS escalation_jobs (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL PRIMARY KEY,
   daily_schedule_id TEXT NOT NULL REFERENCES daily_schedules(id) ON DELETE CASCADE,
   profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   deliver_at TEXT NOT NULL,
