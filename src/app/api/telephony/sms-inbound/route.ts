@@ -36,11 +36,33 @@ export async function POST(request: NextRequest) {
   }
 
   // Signature check BEFORE any database work — an unauthorized request never
-  // opens the store. `request.url` must match the URL Twilio registered;
-  // a re-writing proxy needs its registered public URL reconstructed here.
+  // opens the store. Twilio signs the URL IT was configured with — the public
+  // origin. Behind a re-writing proxy, request.url keeps the internal
+  // scheme/host, so reconstruct the public validation URL: an explicit
+  // SICKBAY_PUBLIC_BASE_URL wins, then standard forwarding headers, then the
+  // request URL as-is.
+  const validationUrl = new URL(request.url);
+  if (process.env.SICKBAY_PUBLIC_BASE_URL) {
+    const publicBase = new URL(process.env.SICKBAY_PUBLIC_BASE_URL);
+    // Assign hostname/port separately — the WHATWG URL host setter keeps an
+    // existing port (localhost:3000 → e2b.app:3000) when the assigned value
+    // carries none, which silently breaks signature validation.
+    validationUrl.protocol = publicBase.protocol;
+    validationUrl.hostname = publicBase.hostname;
+    validationUrl.port = publicBase.port;
+  } else {
+    const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0];
+    if (forwardedHost) {
+      const forwarded = new URL(`//${forwardedHost}`, 'http://placeholder.invalid');
+      validationUrl.hostname = forwarded.hostname;
+      validationUrl.port = forwarded.port;
+    }
+    const forwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0];
+    if (forwardedProto) validationUrl.protocol = forwardedProto;
+  }
   const authorization = authorizeInboundSms({
     env: process.env,
-    url: request.url,
+    url: validationUrl.toString(),
     signature: request.headers.get('x-twilio-signature'),
     params,
   });
