@@ -18,10 +18,18 @@ export interface AdapterDeps {
   fetchImpl?: typeof fetch;
 }
 
+/**
+ * Real-mode gate for the SMS integration: all three Twilio credentials present.
+ * The inbound webhook's signature check shares this gate so authorization and
+ * adapter selection can never disagree about what "real mode" is.
+ */
+export function hasTwilioCredentials(env: Env): boolean {
+  return Boolean(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_FROM_NUMBER);
+}
+
 function isRealTwilio(env: Env): [string, string, string] | null {
-  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER } = env;
-  if (!(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_FROM_NUMBER)) return null;
-  return [TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER];
+  if (!hasTwilioCredentials(env)) return null;
+  return [env.TWILIO_ACCOUNT_SID as string, env.TWILIO_AUTH_TOKEN as string, env.TWILIO_FROM_NUMBER as string];
 }
 
 function concentrateAiApiKey(env: Env): string | null {
