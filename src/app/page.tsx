@@ -19,6 +19,7 @@ export default function Home() {
         </p>
         <DemoControls />
         <nav className="lcars-page__nav" aria-label="Demo surfaces">
+          <a href="/schedule">Daily Schedule →</a>
           <a href="/outbox">SMS Outbox Console →</a>
           <a href="/side-effects">Side-Effect Monitor →</a>
         </nav>
