@@ -91,6 +91,7 @@ function rowEvent(row: ScheduleRow): DoseEvent {
     scheduledFor: row.scheduled_for,
     adherenceStatus: row.adherence_status as AdherenceStatus,
     isPastBedtimeWarning: row.is_past_bedtime_warning === 1,
+    deferredReason: deferredReasonOf(row.deferred_reason),
   };
 }
 

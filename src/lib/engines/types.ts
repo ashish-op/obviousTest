@@ -32,6 +32,12 @@ export interface DoseEvent {
   adherenceStatus: AdherenceStatus;
   /** Current past-bedtime flag; preserved for frozen doses, recomputed for moved ones. */
   isPastBedtimeWarning?: boolean;
+  /**
+   * Why the dose sits where it does ('wake_shift' | 'buffer_push'), carried in
+   * from persisted state. A solve that makes no new displacement preserves it
+   * — a deferred marker is a durable fact, not a per-solve artifact.
+   */
+  deferredReason?: DeferredReason | null;
 }
 
 /**
