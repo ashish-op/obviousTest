@@ -48,6 +48,12 @@ export const CLINICAL_NOTICE =
   'licensed physician or pharmacist can make medication decisions — review this ' +
   'report with them during medication reconciliation.';
 
+/**
+ * Wrap at word boundaries only — a clinical report must never hyphenate a
+ * medication or symptom word across lines.
+ */
+const noHyphenation = (word: string): string[] => [word];
+
 export const PDF_STYLES = StyleSheet.create({
   page: {
     padding: 36,
@@ -173,7 +179,9 @@ function SymptomEntry({
       <Text style={PDF_STYLES.flagLine}>
         {medicationName}: {log.symptom} — severity {log.severity}/5 (reported {formatDateLabel(log.reportedAt)})
       </Text>
-      <Text style={PDF_STYLES.prompt}>{log.reconciliationPrompt}</Text>
+      <Text style={PDF_STYLES.prompt} hyphenationCallback={noHyphenation}>
+        {log.reconciliationPrompt}
+      </Text>
     </View>
   );
 }
