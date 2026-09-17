@@ -63,7 +63,10 @@ export async function runEscalationSweep(
   const backfilledJobs = await ensureEscalationJobs(db, adapters.delayQueue);
 
   const dueRows = db
-    .prepare('SELECT id, daily_schedule_id, deliver_at, status FROM escalation_jobs WHERE status = ?')
+    .prepare(
+      // The engine view is camelCase; alias the snake_case columns at the edge.
+      'SELECT id, daily_schedule_id, deliver_at AS deliverAt, status FROM escalation_jobs WHERE status = ?',
+    )
     .all('pending') as DueJobRow[];
   const due = selectDueEscalations(dueRows, now);
 

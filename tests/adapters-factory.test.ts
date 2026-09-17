@@ -8,6 +8,9 @@ const REAL_TWILIO_ENV = {
   TWILIO_ACCOUNT_SID: 'ACtest00000000000000000000000000',
   TWILIO_AUTH_TOKEN: 'unit-test-token',
   TWILIO_FROM_NUMBER: '+15550001111',
+  // Real-mode sends now also record to sms_outbox (delivery_mode 'real'), so
+  // the encryption key is part of the real-mode contract in these tests.
+  PHONE_ENCRYPTION_KEY: TEST_KEY_HEX,
 };
 
 describe('getAdapters — factory gating on env credentials alone', () => {
@@ -60,6 +63,16 @@ describe('getAdapters — factory gating on env credentials alone', () => {
     expect(messageId).toBe(successBody.sid);
     expect(calls).toHaveLength(1);
     expect(calls[0].input).toContain('api.twilio.com');
+
+    // Real sends still land in the outbox (delivery_mode 'real') so the demo
+    // console renders what hit a phone in BOTH modes (build spec).
+    const rows = db.prepare('SELECT delivery_mode, provider_message_id FROM sms_outbox').all() as {
+      delivery_mode: string;
+      provider_message_id: string | null;
+    }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].delivery_mode).toBe('real');
+    expect(rows[0].provider_message_id).toBe(successBody.sid);
   });
 
   it('keeps integrations independent — real Twilio credentials do not force OCR real', async () => {

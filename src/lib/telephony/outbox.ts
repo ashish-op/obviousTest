@@ -147,7 +147,7 @@ export function listOutboxForConsole(db: SqliteDb, key: Buffer, limit = 100): Sm
       `SELECT id, direction, recipient_encrypted, sender, body, media_url,
               provider_message_id, delivery_mode, related_daily_schedule_id, created_at
        FROM sms_outbox
-       ORDER BY created_at DESC, id DESC
+       ORDER BY rowid DESC
        LIMIT ?`,
     )
     .all(limit) as OutboxRow[];
