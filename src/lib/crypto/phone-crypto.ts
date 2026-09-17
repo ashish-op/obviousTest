@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import type { PartialEnv } from '../env';
 
 /**
  * AES-256-GCM encryption for phone numbers at rest (PRD §8).
@@ -11,7 +12,10 @@ const ENVELOPE_VERSION = 'v1';
 const ENVELOPE_PARTS = 4;
 const KEY_BYTES = 32;
 
-export function loadEncryptionKey(env: NodeJS.ProcessEnv = process.env): Buffer {
+// PartialEnv, not NodeJS.ProcessEnv: Next.js types NODE_ENV as required on
+// the global ProcessEnv, and tests pass env objects without it. Node's own
+// typing treats every var as optional.
+export function loadEncryptionKey(env: PartialEnv = process.env): Buffer {
   const raw = env.PHONE_ENCRYPTION_KEY;
 
   if (!raw) {

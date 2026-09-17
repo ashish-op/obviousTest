@@ -1,4 +1,5 @@
 import type { SqliteDb } from './connection';
+import type { PartialEnv } from '../env';
 import { encryptPhoneNumber, loadEncryptionKey } from '../crypto/phone-crypto';
 
 /** Fixed UUID for the seeded demo profile (build spec: single demo user). */
@@ -12,7 +13,10 @@ export interface SeedProfileValues {
   caregiverPhone: string | null;
 }
 
-export function demoProfileValues(env: NodeJS.ProcessEnv = process.env): SeedProfileValues {
+// PartialEnv, not NodeJS.ProcessEnv: Next.js augments the global ProcessEnv
+// with a required NODE_ENV; Node's own typing treats every var as optional.
+// Absent vars fall back to the fixed demo defaults.
+export function demoProfileValues(env: PartialEnv = process.env): SeedProfileValues {
   return {
     id: DEMO_PROFILE_ID,
     fullName: env.DEMO_PROFILE_FULL_NAME ?? 'Robert Sharma',
@@ -31,7 +35,7 @@ export interface SeedResult {
  * Idempotently seeds the demo profile. Phone numbers are stored only as
  * AES-256-GCM envelopes — never in plaintext (PRD §8).
  */
-export function seedDemoProfile(db: SqliteDb, env: NodeJS.ProcessEnv = process.env): SeedResult {
+export function seedDemoProfile(db: SqliteDb, env: PartialEnv = process.env): SeedResult {
   const values = demoProfileValues(env);
   const key = loadEncryptionKey(env);
 

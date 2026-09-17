@@ -8,6 +8,8 @@
  * reach Twilio or ConcentrateAI.
  */
 
+import type { PartialEnv } from '../env';
+
 /**
  * Structured result of reading a medication label from a photo (PRD §3).
  * Only medication-label content ever reaches the model — no patient
@@ -68,5 +70,14 @@ export interface Adapters {
   delayQueue: DelayQueueAdapter;
 }
 
-/** Environment variables the factory reads (subset of NodeJS.ProcessEnv). */
-export type Env = NodeJS.ProcessEnv;
+/**
+ * Environment variables the factory reads. The gate reads ONLY the env passed
+ * in — never process.env directly — so partial env objects are first-class:
+ * tests and CI pass fragments. Typed as PartialEnv (an open string map, every
+ * var optional) rather than NodeJS.ProcessEnv, which Next.js augments with a
+ * required NODE_ENV that Node's own typing leaves unset. Consulted vars:
+ * PHONE_ENCRYPTION_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN,
+ * TWILIO_FROM_NUMBER, CONCENTRATEAI_API_KEY, CONCENTRATEAI_BASE_URL,
+ * CONCENTRATEAI_VISION_MODEL.
+ */
+export type Env = PartialEnv;
