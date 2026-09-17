@@ -1,0 +1,9 @@
+{
+  "$comment": "Recorded wire-shape fixture of a Twilio REST POST /Messages.json 201 response, hand-authored to Twilio's documented response schema. Contract tests feed it through createTwilioSmsAdapter via an injected fetch — no network. The real-credential smoke in task 10 replaces this with a live capture.",
+  "sid": "SM8f2a1c4e77b94d0aa6f5e3c2d1b0a998",
+  "status": "queued",
+  "to": "+15550100001",
+  "from": "+15550001111",
+  "num_segments": "1",
+  "date_created": "Thu, 17 Sep 2026 18:00:00 +0000"
+}

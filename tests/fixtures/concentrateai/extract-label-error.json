@@ -1,0 +1,8 @@
+{
+  "$comment": "Recorded wire-shape fixture of a ConcentrateAI POST /responses 401 error body, hand-authored to the OpenAI-style error schema. Contract tests feed it through createConcentrateAiVisionAdapter via an injected fetch — no network.",
+  "error": {
+    "message": "Invalid API key provided.",
+    "type": "invalid_request_error",
+    "code": "invalid_api_key"
+  }
+}

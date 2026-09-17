@@ -1,0 +1,8 @@
+{
+  "$comment": "Recorded wire-shape fixture of a ConcentrateAI POST /responses 200 reply in its `output_text` convenience form, hand-authored to the OpenAI-style Responses schema. Contract tests feed it through createConcentrateAiVisionAdapter via an injected fetch — no network. Real capture happens at the task-10 credential smoke.",
+  "id": "resp_9c1f2a4e77b9",
+  "object": "response",
+  "created": 1789761600,
+  "model": "gpt-4o",
+  "output_text": "{\"brandName\":\"Synthroid\",\"genericName\":\"levothyroxine\",\"dosage\":\"50 mcg\",\"instructionsRaw\":\"Take once daily in the morning on an empty stomach, at least 1 hour before breakfast.\",\"confidence\":0.93,\"highRiskSideEffects\":[],\"rxcui\":null}"
+}
