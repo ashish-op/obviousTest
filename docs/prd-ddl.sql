@@ -112,6 +112,11 @@ CREATE TABLE IF NOT EXISTS escalation_jobs (
 );
 
 -- ---------------------------------------------------------------------
+-- Implementation-additive tables (not PRD §2; build-spec additions) live in
+-- later migrations and therefore appear below, in migration order.
+-- ---------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------
 -- Indexes
 -- ---------------------------------------------------------------------
 
@@ -122,3 +127,16 @@ CREATE INDEX IF NOT EXISTS idx_side_effect_logs_profile ON side_effect_logs(prof
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_sms_outbox_created ON sms_outbox(created_at);
 CREATE INDEX IF NOT EXISTS idx_escalation_jobs_sweep ON escalation_jobs(status, deliver_at);
+
+-- Migration 0002 — schedule settings: the wake/bedtime anchors the current
+-- daily plan was built from (task 6: "Woke up late" shift deltas and
+-- past-bedtime warnings are computed against these). One row per profile;
+-- profile_id is UNIQUE, which carries its own implicit index.
+CREATE TABLE IF NOT EXISTS schedule_settings (
+  id TEXT NOT NULL PRIMARY KEY,
+  profile_id TEXT NOT NULL UNIQUE REFERENCES profiles(id) ON DELETE CASCADE,
+  wake_time TEXT NOT NULL DEFAULT '07:00' CHECK (wake_time GLOB '[0-2][0-9]:[0-5][0-9]'),
+  bedtime TEXT NOT NULL DEFAULT '22:00' CHECK (bedtime GLOB '[0-2][0-9]:[0-5][0-9]'),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);

@@ -12,6 +12,11 @@ import { createTestDb } from './helpers';
  * migration nor the documented contract can drift silently.
  */
 
+/**
+ * Contract tables: the seven PRD §2 tables plus the implementation-additive
+ * schedule_settings (migration 0002 — the wake/bedtime anchors the daily plan
+ * is built from; same build-spec precedent as sms_outbox/escalation_jobs).
+ */
 const PRD_TABLES = [
   'profiles',
   'medications',
@@ -20,6 +25,7 @@ const PRD_TABLES = [
   'audit_logs',
   'sms_outbox',
   'escalation_jobs',
+  'schedule_settings',
 ] as const;
 
 /** [name, type, notnull, default — null means "no DEFAULT clause"] */
@@ -107,6 +113,14 @@ const COLUMNS: Record<string, ColumnSpec[]> = {
     ['dispatched_at', 'TEXT', 0, null],
     ['created_at', 'TEXT', 1, "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"],
   ],
+  schedule_settings: [
+    ['id', 'TEXT', 1, null],
+    ['profile_id', 'TEXT', 1, null],
+    ['wake_time', 'TEXT', 1, "'07:00'"],
+    ['bedtime', 'TEXT', 1, "'22:00'"],
+    ['created_at', 'TEXT', 1, "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"],
+    ['updated_at', 'TEXT', 1, "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"],
+  ],
 };
 
 /** Every enum rendered as a CHECK constraint, with its exact value set. */
@@ -127,6 +141,7 @@ const FK_EXPECTATIONS: [table: string, references: string[]][] = [
   ['side_effect_logs', ['profiles', 'medications', 'daily_schedules']],
   ['sms_outbox', ['profiles', 'daily_schedules']],
   ['escalation_jobs', ['daily_schedules', 'profiles']],
+  ['schedule_settings', ['profiles']],
 ];
 
 const INDEXES: [name: string, table: string][] = [
@@ -164,7 +179,7 @@ function normalizeDdl(sql: string): string {
 describe('schema parity — PRD §2 DDL contract', () => {
   const { db } = createTestDb();
 
-  it('creates exactly the seven contract tables (plus _migrations)', () => {
+  it('creates exactly the eight contract tables (plus _migrations)', () => {
     const tables = (
       db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
@@ -295,13 +310,32 @@ describe('schema parity — PRD §2 DDL contract', () => {
     }
   });
 
+  it('schedule_settings enforces HH:MM wall-clock anchors', () => {
+    const sql = tableSql(db, 'schedule_settings');
+    expect(sql).toContain("wake_time GLOB '[0-2][0-9]:[0-5][0-9]'");
+    expect(sql).toContain("bedtime GLOB '[0-2][0-9]:[0-5][0-9]'");
+    // One settings row per profile: profile_id is UNIQUE in addition to the id PK.
+    const info = db.prepare('PRAGMA table_info(schedule_settings)').all() as {
+      name: string;
+      pk: number;
+    }[];
+    expect(info.filter((c) => c.pk === 1).map((c) => c.name)).toEqual(['id']);
+    expect(() =>
+      db
+        .prepare(
+          "INSERT INTO schedule_settings (id, profile_id, wake_time) VALUES ('ss1', 'p1', '25:99')",
+        )
+        .run(),
+    ).toThrow(/CHECK/);
+  });
+
   it('migration file and docs/prd-ddl.sql are statement-identical (drift guard)', () => {
     const migrationsDir = path.join(repoRoot(), 'src', 'lib', 'db', 'migrations');
     const migrationFiles = fs
       .readdirSync(migrationsDir)
       .filter((f) => f.endsWith('.sql'))
       .sort();
-    expect(migrationFiles).toEqual(['0001_init.sql']);
+    expect(migrationFiles).toEqual(['0001_init.sql', '0002_schedule_settings.sql']);
 
     const migrationSql = migrationFiles
       .map((f) => fs.readFileSync(path.join(migrationsDir, f), 'utf8'))
