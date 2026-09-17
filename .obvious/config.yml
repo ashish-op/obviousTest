@@ -1,0 +1,15 @@
+# Repository policy for obvious agents working in ashish-op/obviousTest.
+# Written by the onboarding run on 2026-09-17 (empty-repository scaffold).
+
+# Default branch. Auto-detected from GitHub repo settings: the remote repo
+# had no default branch (zero commits, zero refs), and `main` is the branch
+# this repository initializes, so `main` is the default.
+defaultBranch: main
+
+# Merge method for agent-opened setup PRs. Auto-detected from GitHub repo
+# settings: merge commits, squash, and rebase are all enabled on this repo;
+# squash is the chosen policy.
+mergeMethod: squash
+
+# A human must approve and merge default-branch setup PRs opened by agents.
+requireHumanMerge: true
