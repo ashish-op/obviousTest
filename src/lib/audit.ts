@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { SqliteDb } from '@/lib/db/connection';
 
 export const DISCLAIMER_ACK_ACTION = 'disclaimer_acknowledged';
+export const RECONCILIATION_PDF_EXPORT_ACTION = 'reconciliation_pdf_exported';
 
 export interface AuditEventInput {
   action: string;
