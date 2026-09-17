@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "db:migrate": "tsx src/scripts/db-migrate.ts",
     "db:seed": "tsx src/scripts/db-seed.ts",
-    "db:init": "npm run db:migrate && npm run db:seed"
+    "db:init": "npm run db:migrate && npm run db:seed",
+    "smoke:e2e": "tsx src/scripts/e2e-smoke.ts"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.9.0",
