@@ -91,7 +91,8 @@ export function recalculateDynamicSchedule(input: ScheduleShiftInput): ScheduleS
 
     // 1. Wake-delta shift — the anchor never moves earlier than it was.
     let final = new Date(original.getTime() + deltaMinutes * 60_000);
-    let deferredReason: DeferredReason | null = deltaMinutes > 0 ? 'wake_shift' : null;
+    let deferredReason: DeferredReason | null =
+      deltaMinutes > 0 ? 'wake_shift' : (dose.deferredReason ?? null);
 
     // 2. Buffer enforcement: push forward only, never earlier than the anchor.
     for (const constraint of requirementIndex.get(dose.medicationId) ?? []) {
