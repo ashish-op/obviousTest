@@ -6,25 +6,13 @@ import { extractFromPhotos } from '@/lib/ingestion/extract';
 import { mergeSideEffects } from '@/lib/ingestion/side-effects';
 import { ApiValidationError } from '@/lib/api/errors';
 import { normalizeMedicationName } from '@/lib/engines/rxnorm';
-import { createTestDb } from './helpers';
+import { adaptersFor, createTestDb } from './helpers';
 
 /** Adapter stub returning one fixed extraction — exact scores for the gate. */
 function fixedAdapter(result: LabelExtractionResult | Error): VisionOcrAdapter {
   return {
     extractLabel: () =>
       result instanceof Error ? Promise.reject(result) : Promise.resolve(result),
-  };
-}
-
-function adaptersFor(visionOcr: VisionOcrAdapter): Adapters {
-  return {
-    visionOcr,
-    smsGateway: {
-      send: () => Promise.reject(new Error('smsGateway must not be called during extraction')),
-    },
-    delayQueue: {
-      enqueue: () => Promise.reject(new Error('delayQueue must not be called during extraction')),
-    },
   };
 }
 
