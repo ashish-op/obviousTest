@@ -107,7 +107,9 @@ function intervalTimes(start: string, stepHours: number, lastAnchor: string): st
 }
 
 function clockToMinutes(clock: string): number {
-  const [hours, minutes] = clock.split(':').map(Number.parseInt.bind(Number));
+  // No `parseInt.bind` inside map: map's second argument (the index) would
+  // become the radix and silently NaN odd positions.
+  const [hours, minutes] = clock.split(':').map((part) => Number.parseInt(part, 10));
   return hours * 60 + minutes;
 }
 
