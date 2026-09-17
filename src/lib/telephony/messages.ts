@@ -11,12 +11,11 @@ import { type SideEffectCheckIn } from '@/lib/engines/risk-matrix';
 import { toInstant } from '@/lib/engines/time';
 
 /**
- * An affirmed SMS symptom report ("DIZZY YES") carries no graded severity.
- * It is recorded at this severity so the report always triggers the caregiver
- * notice and the physician reconciliation flag (risk-matrix: severity >= 4
- * is severe). Fail-safe direction for a tracking tool; tune here, not inline.
+ * An affirmed SMS symptom report ("DIZZY YES") carries no graded severity;
+ * the protocol's severity bands live in the risk-matrix engine
+ * (AFFIRMED_REPORT_SEVERITY / NEGATIVE_CHECK_IN_SEVERITY) alongside every
+ * other side-effect decision — messages only compose strings.
  */
-export const SMS_SYMPTOM_REPORT_SEVERITY = 4;
 
 /** "2026-09-17T15:00:00.000Z" -> "15:00 UTC" — the demo runs in UTC. */
 export function formatTimeLabel(iso: string): string {
@@ -52,7 +51,7 @@ export function unknownSenderReply(): string {
 
 export function symptomReportAckReply(canonicalSymptom: string, affirmed: boolean): string {
   if (!affirmed) {
-    return `Sickbay: Thank you — we've noted no ${canonicalSymptom}.`;
+    return `Sickbay: Thank you — we've noted no ${canonicalSymptom}. This check-in is part of your physician report.`;
   }
   return `Sickbay: Thank you — your ${canonicalSymptom} report was recorded and your caregiver has been notified.`;
 }

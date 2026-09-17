@@ -22,6 +22,8 @@ import { nextDoseStatus } from '@/lib/engines/escalation';
 import {
   assessSideEffectReport,
   buildSideEffectCheckIns,
+  AFFIRMED_REPORT_SEVERITY,
+  NEGATIVE_CHECK_IN_SEVERITY,
   parseHighRiskSideEffects,
 } from '@/lib/engines/risk-matrix';
 import { recordAuditEvent } from '@/lib/audit';
@@ -31,7 +33,6 @@ import {
   confirmationReply,
   noPendingDoseReply,
   skipReply,
-  SMS_SYMPTOM_REPORT_SEVERITY,
   symptomReportAckReply,
   unattributableSymptomReply,
   unknownCommandReply,
@@ -230,6 +231,12 @@ async function applyDoseCommand(
  * Attribute a DIZZY YES/NO report (PRD §5 protocol) to a dose: the most
  * recently confirmed dose whose medication lists the symptom wins; otherwise
  * the most recently confirmed dose of any medication; otherwise unattributed.
+ *
+ * Both answers persist (build spec: "DIZZY YES/NO answers persist to
+ * side_effect_logs with severity 1–5"): an affirmed report records at the
+ * fail-safe AFFIRMED_REPORT_SEVERITY, a negative answer at
+ * NEGATIVE_CHECK_IN_SEVERITY — the monitoring loop's record that the
+ * check-in was asked and answered. Only affirmed reports page the caregiver.
  */
 async function applySymptomReport(
   deps: InboundSmsDeps,
@@ -245,13 +252,6 @@ async function applySymptomReport(
   if (!profile) {
     // Profile vanished between lookup and use — an integrity failure, surfaced.
     throw new Error(`Profile ${profileId} disappeared during symptom handling`);
-  }
-
-  // A negative answer is a clean check-in, not a symptom report — acknowledge
-  // only. No log row: side_effect_logs carries symptoms, not their absence.
-  if (!affirmed) {
-    await sendReply(deps, from, symptomReportAckReply(canonicalSymptom, false));
-    return { status: 'symptom_report', canonicalSymptom, affirmed, scheduleId: null };
   }
 
   const confirmed = db
@@ -272,7 +272,7 @@ async function applySymptomReport(
   if (attributed) {
     const assessment = assessSideEffectReport({
       symptom: canonicalSymptom,
-      severity: SMS_SYMPTOM_REPORT_SEVERITY,
+      severity: affirmed ? AFFIRMED_REPORT_SEVERITY : NEGATIVE_CHECK_IN_SEVERITY,
       medication: {
         id: attributed.medication_id,
         highRiskSideEffects: parseHighRiskSideEffects(attributed.high_risk_side_effects),
@@ -294,8 +294,9 @@ async function applySymptomReport(
   }
 
   // Fail-safe routing: an affirmed report always notifies the caregiver —
-  // attributed (with dose context) or not (flagged as unlinked).
-  if (profile.caregiverPhone) {
+  // attributed (with dose context) or not (flagged as unlinked). A negative
+  // answer is a clean check-in and never pages anyone.
+  if (affirmed && profile.caregiverPhone) {
     await sendReply(
       deps,
       profile.caregiverPhone,
@@ -311,7 +312,11 @@ async function applySymptomReport(
   await sendReply(
     deps,
     from,
-    attributed ? symptomReportAckReply(canonicalSymptom, true) : unattributableSymptomReply(canonicalSymptom),
+    attributed
+      ? symptomReportAckReply(canonicalSymptom, affirmed)
+      : affirmed
+        ? unattributableSymptomReply(canonicalSymptom)
+        : symptomReportAckReply(canonicalSymptom, false),
   );
 
   return { status: 'symptom_report', canonicalSymptom, affirmed, scheduleId: attributed?.id ?? null };

@@ -42,10 +42,28 @@ export function isValidSeverity(severity: number): boolean {
   return Number.isInteger(severity) && severity >= 1 && severity <= 5;
 }
 
+/**
+ * An affirmed SMS symptom report (`DIZZY YES`) carries no graded severity —
+ * the PRD §5 protocol is yes/no only. It records at this fail-safe severity:
+ * the top band trips the reconciliation flag, so a real symptom can never
+ * downgrade to silence. Tune here, not inline.
+ */
+export const AFFIRMED_REPORT_SEVERITY = 4;
+
+/**
+ * A negative check-in (`DIZZY NO`) is the completed-clean answer to a
+ * scheduled check-in, not a symptom — it records at the lowest severity so
+ * the monitoring loop shows the question was asked and answered while
+ * flagging nothing. The severity column has no answer bit, so the answer
+ * IS the band: 1 = denied, ≥ 4 = affirmed (build spec: DIZZY YES/NO answers
+ * persist with severity 1–5).
+ */
+export const NEGATIVE_CHECK_IN_SEVERITY = 1;
+
 /** Severity ≥ 4 is severe: the caregiver hears about it even off-protocol. */
 const SEVERE_SEVERITY = 4;
 /** Severity ≥ 3 (moderate and up) is flagged for physician reconciliation. */
-const RECONCILIATION_MIN_SEVERITY = 3;
+export const RECONCILIATION_MIN_SEVERITY = 3;
 
 export interface SideEffectReportAssessment {
   /** The canonical symptom name (already canonicalized by the caller). */

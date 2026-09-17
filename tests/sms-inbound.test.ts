@@ -27,7 +27,7 @@ process.env.PHONE_ENCRYPTION_KEY = TEST_KEY_HEX;
 const { POST } = await import('@/app/api/telephony/sms-inbound/route');
 const { getDb } = await import('@/lib/db/connection');
 const { encryptPhoneNumber, decryptPhoneNumber } = await import('@/lib/crypto/phone-crypto');
-const { SMS_SYMPTOM_REPORT_SEVERITY } = await import('@/lib/telephony/messages');
+const { AFFIRMED_REPORT_SEVERITY, NEGATIVE_CHECK_IN_SEVERITY } = await import('@/lib/engines/risk-matrix');
 
 const KEY = Buffer.from(TEST_KEY_HEX, 'hex');
 const WEBHOOK_URL = 'https://sickbay.example/api/telephony/sms-inbound';
@@ -241,7 +241,7 @@ describe('POST /api/telephony/sms-inbound — fixture mode protocol matrix', () 
       .prepare('SELECT symptom, severity, daily_schedule_id FROM side_effect_logs')
       .get() as { symptom: string; severity: number; daily_schedule_id: string };
     expect(log.symptom).toBe('dizziness');
-    expect(log.severity).toBe(SMS_SYMPTOM_REPORT_SEVERITY);
+    expect(log.severity).toBe(AFFIRMED_REPORT_SEVERITY);
     expect(log.daily_schedule_id).toBe(earlyScheduleId);
 
     const messages = outboundRows();
@@ -251,7 +251,7 @@ describe('POST /api/telephony/sms-inbound — fixture mode protocol matrix', () 
     expect(messages[1].to).toBe(PATIENT_PHONE); // then the patient ack
   });
 
-  it('acknowledges DIZZY NO without logging a symptom or paging the caregiver', async () => {
+  it('persists DIZZY NO as a clean severity-1 check-in without paging the caregiver', async () => {
     const { earlyScheduleId } = seedPatient();
     db.prepare(
       `UPDATE daily_schedules SET adherence_status = 'CONFIRMED', confirmed_at = ? WHERE id = ?`,
@@ -263,11 +263,19 @@ describe('POST /api/telephony/sms-inbound — fixture mode protocol matrix', () 
     expect(payload.outcome.status).toBe('symptom_report');
     expect(payload.outcome.affirmed).toBe(false);
 
-    const logs = db.prepare('SELECT COUNT(*) AS n FROM side_effect_logs').get() as { n: number };
-    expect(logs.n).toBe(0);
+    // The answer is part of the monitoring record (severity band 1 = denied)
+    // — but a denial never flags a symptom or pages the caregiver.
+    const log = db
+      .prepare('SELECT symptom, severity, daily_schedule_id FROM side_effect_logs')
+      .get() as { symptom: string; severity: number; daily_schedule_id: string };
+    expect(log.symptom).toBe('dizziness');
+    expect(log.severity).toBe(NEGATIVE_CHECK_IN_SEVERITY);
+    expect(log.daily_schedule_id).toBe(earlyScheduleId);
+
     const messages = outboundRows();
-    expect(messages).toHaveLength(1);
+    expect(messages).toHaveLength(1); // patient ack only — no caregiver page
     expect(messages[0].to).toBe(PATIENT_PHONE);
+    expect(messages[0].body).toContain('no dizziness');
   });
 
   it('answers an unknown sender politely and audits, changing nothing', async () => {
