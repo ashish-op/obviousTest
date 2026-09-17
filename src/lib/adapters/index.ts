@@ -7,6 +7,7 @@ import {
 } from './fixture';
 import { createConcentrateAiVisionAdapter } from './concentrateai';
 import { createTwilioSmsAdapter } from './twilio';
+import { createOutboxRecordingSmsAdapter } from './outbox-recorder';
 import type { Adapters, Env } from './types';
 
 export * from './types';
@@ -47,12 +48,21 @@ function concentrateAiApiKey(env: Env): string | null {
 export function getAdapters(env: Env, deps: AdapterDeps): Adapters {
   const twilio = isRealTwilio(env);
   const smsGateway = twilio
-    ? createTwilioSmsAdapter({
-        accountSid: twilio[0],
-        authToken: twilio[1],
-        fromNumber: twilio[2],
-        fetchImpl: deps.fetchImpl,
-      })
+    ? // Real mode still records every send to sms_outbox (provider sid kept) —
+      // the console renders what hit a phone in both modes.
+      createOutboxRecordingSmsAdapter(
+        createTwilioSmsAdapter({
+          accountSid: twilio[0],
+          authToken: twilio[1],
+          fromNumber: twilio[2],
+          fetchImpl: deps.fetchImpl,
+        }),
+        {
+          db: deps.db,
+          // Lazy so real mode never demands PHONE_ENCRYPTION_KEY.
+          encryptionKey: () => loadEncryptionKey(env),
+        },
+      )
     : createFixtureSmsAdapter({
         db: deps.db,
         // Lazy so real mode never demands PHONE_ENCRYPTION_KEY.

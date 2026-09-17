@@ -49,7 +49,10 @@ export function shouldEscalateDose(
  * dispatch order (deliverAt ascending, id tie-break). Dispatching and status
  * writes happen in the sweep runner; this is the pure decision.
  */
-export function selectDueEscalations(jobs: readonly EscalationJobView[], now: Date): EscalationJobView[] {
+export function selectDueEscalations<T extends EscalationJobView>(
+  jobs: readonly T[],
+  now: Date,
+): T[] {
   return jobs
     .filter((job) => job.status === 'pending' && toInstant(job.deliverAt).getTime() <= now.getTime())
     .sort(
