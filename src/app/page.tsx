@@ -18,6 +18,9 @@ export default function Home() {
           consult a licensed clinician.
         </p>
         <DemoControls />
+        <nav className="lcars-page__nav" aria-label="Demo surfaces">
+          <a href="/outbox">SMS Outbox Console →</a>
+        </nav>
         <div className="lcars-grid">
           <LcarsPanel label="Morning doses" tone="panel">
             <DataValue label="Levothyroxine" value="07:00" unit="50 mcg" />
